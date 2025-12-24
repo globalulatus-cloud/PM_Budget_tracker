@@ -59,24 +59,43 @@ if "cost_rows" not in st.session_state:
 # Header
 # -------------------------------------------------
 st.title("💰 Project Budget Tracker")
-st.caption("Track internal costs against the approved client budget")
+st.caption("Track internal costs against the charged client amount")
 
 # =================================================
-# CLIENT BUDGET CARD
+# CHARGED TO CLIENT + CONFIGURABLE BUDGET %
 # =================================================
 with st.container(border=True):
-    st.subheader("📌 Client Approved Budget")
+    st.subheader("💼 Commercial Details")
 
-    c1, c2 = st.columns([1, 2])
+    c1, c2, c3 = st.columns([1, 2, 2])
+
     with c1:
         client_currency = st.selectbox("Currency", CURRENCIES)
+
     with c2:
-        client_budget = st.number_input(
-            "Approved Budget Amount",
+        charged_to_client = st.number_input(
+            "Charged to Client",
             min_value=0.0,
             step=1000.0,
             format="%.2f",
         )
+
+    with c3:
+        budget_percent = st.number_input(
+            "Internal Budget %",
+            min_value=0.0,
+            max_value=100.0,
+            value=40.0,
+            step=1.0,
+            format="%.2f",
+        )
+
+    internal_budget = charged_to_client * (budget_percent / 100)
+
+    st.caption(
+        "Internal budget is calculated as "
+        "Charged to Client × Internal Budget %"
+    )
 
 # =================================================
 # ADD COST FORM
@@ -124,7 +143,7 @@ if st.session_state.cost_rows:
                 c = st.columns([2, 2, 2, 1.5, 1.5, 1.5, 1])
 
                 c[0].markdown(f"**{row['Cost Type']}**")
-                c[1].write(row["Vendor"] or "—")
+                c[1].write(row["Vendor"] or "-")
                 c[2].write(row["Method"])
                 c[3].write(row["Volume"])
                 c[4].write(row["Rate"])
@@ -141,24 +160,41 @@ if st.session_state.cost_rows:
     # BUDGET HEALTH
     # =================================================
     total_internal = sum(r["Internal Cost"] for r in st.session_state.cost_rows)
-    utilization = (total_internal / client_budget * 100) if client_budget else 0
+    utilization = (
+        (total_internal / internal_budget * 100)
+        if internal_budget
+        else 0
+    )
 
     with st.container(border=True):
         st.subheader("📊 Budget Health")
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Client Budget", f"{round_currency(client_budget, client_currency)} {client_currency}")
-        m2.metric("Total Internal Cost", f"{round_currency(total_internal, client_currency)} {client_currency}")
-        m3.metric("Utilization %", f"{round(utilization, 2)} %")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric(
+            "Charged to Client",
+            f"{round_currency(charged_to_client, client_currency)} {client_currency}",
+        )
+        m2.metric(
+            "Internal Budget",
+            f"{round_currency(internal_budget, client_currency)} {client_currency}",
+        )
+        m3.metric(
+            "Budget %",
+            f"{round(budget_percent, 2)} %",
+        )
+        m4.metric(
+            "Utilization %",
+            f"{round(utilization, 2)} %",
+        )
 
         st.progress(min(utilization / 100, 1.0))
 
         if utilization >= 100:
-            st.error("🚨 Budget exceeded. Immediate action required.")
+            st.error("🚨 Internal budget exceeded. Immediate action required.")
         elif utilization >= 80:
-            st.warning("⚠️ Budget utilization above 80%. Monitor closely.")
+            st.warning("⚠️ Internal budget utilization above 80%. Monitor closely.")
         else:
-            st.success("✅ Budget utilization within safe range.")
+            st.success("✅ Internal budget utilization within safe range.")
 
     # =================================================
     # EXPORT
@@ -166,6 +202,7 @@ if st.session_state.cost_rows:
     with st.container(border=True):
         st.subheader("⬇️ Export")
 
+        # Line-level export
         details_df = pd.DataFrame(st.session_state.cost_rows)
         st.download_button(
             "Download Cost Details CSV",
@@ -174,9 +211,12 @@ if st.session_state.cost_rows:
             "text/csv",
         )
 
+        # Project-level summary export
         summary_df = pd.DataFrame([{
-            "Client Budget": client_budget,
-            "Budget Currency": client_currency,
+            "Charged to Client": charged_to_client,
+            "Currency": client_currency,
+            "Internal Budget %": budget_percent,
+            "Internal Budget Amount": internal_budget,
             "Total Internal Cost": total_internal,
             "Budget Utilization %": round(utilization, 2),
         }])
